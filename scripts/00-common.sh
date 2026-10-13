@@ -33,8 +33,13 @@ LKMLOADER_RELEASE_URL="${LKMLOADER_RELEASE_URL:-https://github.com/maxsteeel/lkm
 LKMLOADER_SHA256="${LKMLOADER_SHA256:-ea0a460350ccaaa9671cf1e3bd764f2421bec5a1948a21f0c85a3b4f06eaaba2}"
 KERNEL_CDN_BASE="${KERNEL_CDN_BASE:-https://cdn.kernel.org/pub/linux/kernel}"
 INSTALL_DIR="${INSTALL_DIR:-/opt/kernelsu}"
-WORKSPACE_DIR="${ROOT_DIR}/${WORKSPACE_DIR:-build_workspace}"
-OUTPUT_DIR="${ROOT_DIR}/${OUTPUT_DIR:-output}"
+WORKSPACE_NAME="${WORKSPACE_DIR:-build_workspace}"
+WORKSPACE_NAME="${WORKSPACE_NAME#./}"
+WORKSPACE_DIR="${ROOT_DIR}/${WORKSPACE_NAME}"
+
+OUTPUT_NAME="${OUTPUT_DIR:-output}"
+OUTPUT_NAME="${OUTPUT_NAME#./}"
+OUTPUT_DIR="${ROOT_DIR}/${OUTPUT_NAME}"
 
 log_header() {
     echo -e "\n${BOLD}${CYAN}======================================================================${NC}"
@@ -83,4 +88,11 @@ check_root_or_sudo() {
 
 ensure_dirs() {
     mkdir -p "${WORKSPACE_DIR}" "${OUTPUT_DIR}"
+}
+
+is_module_loaded() {
+    local mod="$1"
+    grep -q -E "^${mod}\b" /proc/modules 2>/dev/null || \
+    [[ -d "/sys/module/${mod}" ]] || \
+    lsmod 2>/dev/null | grep -q -E "^${mod}\b"
 }

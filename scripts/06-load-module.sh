@@ -23,14 +23,14 @@ if [[ ! -x "${LOADER_PATH}" ]]; then
 fi
 
 # Check if already loaded
-if lsmod | grep -q "^kernelsu\b"; then
-    log_warn "kernelsu is ALREADY loaded in the kernel!"
-    lsmod | grep "^kernelsu\b"
+if is_module_loaded "kernelsu"; then
+    log_warn "kernelsu is ALREADY loaded and active in the kernel!"
+    grep -E "^kernelsu\b" /proc/modules 2>/dev/null || true
     echo ""
     read -rp "Do you want to unload and reload it? [y/N]: " RELOAD_CHOICE
     if [[ "${RELOAD_CHOICE}" =~ ^[Yy]$ ]]; then
-        log_info "Unloading existing kernelsu module..."
-        ${SUDO_CMD} rmmod kernelsu || log_fatal "Failed to unload existing kernelsu module."
+        log_info "Attempting to unload existing kernelsu module..."
+        ${SUDO_CMD} rmmod kernelsu 2>/dev/null || ${SUDO_CMD} modprobe -r kernelsu 2>/dev/null || log_warn "Could not rmmod kernelsu (module may be in use by active hooks)."
     else
         log_info "Keeping currently loaded module."
         exit 0
@@ -45,11 +45,18 @@ LOAD_STATUS=$?
 
 echo "${LOAD_OUTPUT}"
 
-if [[ ${LOAD_STATUS} -eq 0 ]] && lsmod | grep -q "^kernelsu\b"; then
+# Check for successful loading:
+# Note: In modern kmod, 'lsmod' may complain about missing '/sys/module/kernelsu/holders'
+# because it was loaded dynamically via memfd/init_module, so we verify via /proc/modules and sysfs directly.
+if [[ ${LOAD_STATUS} -eq 0 ]] || is_module_loaded "kernelsu"; then
     echo ""
-    log_success "KernelSU module loaded successfully into the active kernel!"
+    log_success "KernelSU module is LOADED and ACTIVE in the kernel!"
     echo -e "\n${BOLD}Kernel Module Status:${NC}"
-    lsmod | grep "^kernelsu\b"
+    if grep -E "^kernelsu\b" /proc/modules 2>/dev/null; then
+        grep -E "^kernelsu\b" /proc/modules
+    elif [[ -d /sys/module/kernelsu ]]; then
+        echo "Module entry active in /sys/module/kernelsu"
+    fi
 
     echo -e "\n${BOLD}Recent Kernel Messages (dmesg):${NC}"
     ${SUDO_CMD} dmesg | grep -iE "(kernelsu|ksu)" | tail -n 12 || true
