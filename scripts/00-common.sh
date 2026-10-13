@@ -27,14 +27,8 @@ if [[ -f "${ROOT_DIR}/config.env" ]]; then
 fi
 
 # Fallback defaults if not set in config.env
-KSU_VARIANT="${KSU_VARIANT:-ksu-next}"
-KSU_GIT_REPO="${KSU_GIT_REPO:-https://github.com/KernelSU-Next/KernelSU-Next.git}"
-KSU_GIT_BRANCH="${KSU_GIT_BRANCH:-dev}"
-SUKISU_GIT_REPO="${SUKISU_GIT_REPO:-https://github.com/ShirkNeko/SukiSU-Ultra.git}"
-SUKISU_GIT_BRANCH="${SUKISU_GIT_BRANCH:-main}"
-CONTAINER_MANAGER_UID="${CONTAINER_MANAGER_UID:-10091}"
-REDROID_CONTAINER_NAME="${REDROID_CONTAINER_NAME:-redroid13_x86_64}"
-REDROID_DATA_DIR="${REDROID_DATA_DIR:-}"
+KSU_GIT_REPO="${KSU_GIT_REPO:-https://github.com/tiann/KernelSU.git}"
+KSU_GIT_BRANCH="${KSU_GIT_BRANCH:-main}"
 LKMLOADER_RELEASE_URL="${LKMLOADER_RELEASE_URL:-https://github.com/maxsteeel/lkmloader/releases/download/v1.0.0/lkmloader-x86_64}"
 LKMLOADER_SHA256="${LKMLOADER_SHA256:-ea0a460350ccaaa9671cf1e3bd764f2421bec5a1948a21f0c85a3b4f06eaaba2}"
 KERNEL_CDN_BASE="${KERNEL_CDN_BASE:-https://cdn.kernel.org/pub/linux/kernel}"

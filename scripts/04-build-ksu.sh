@@ -1,25 +1,14 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# 04-build-ksu.sh - Clone KernelSU / SukiSU and compile out-of-tree LKM (kernelsu.ko)
+# 04-build-ksu.sh - Clone Official KernelSU and compile out-of-tree LKM (kernelsu.ko)
+# Repository: https://github.com/tiann/KernelSU.git
 # ==============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "${SCRIPT_DIR}/00-common.sh"
 
-VARIANT_NAME="KernelSU-Next"
-ACTIVE_REPO="${KSU_GIT_REPO}"
-ACTIVE_BRANCH="${KSU_GIT_BRANCH}"
-SRC_SUBDIR="KernelSU-Next"
-
-if [[ "${KSU_VARIANT}" == "sukisu" ]]; then
-    VARIANT_NAME="SukiSU-Ultra"
-    ACTIVE_REPO="${SUKISU_GIT_REPO}"
-    ACTIVE_BRANCH="${SUKISU_GIT_BRANCH}"
-    SRC_SUBDIR="SukiSU-Ultra"
-fi
-
-log_header "Building ${VARIANT_NAME} LKM for x86_64"
+log_header "Building Official KernelSU (tiann/KernelSU) for x86_64"
 
 ensure_dirs
 
@@ -30,114 +19,43 @@ if [[ ! -d "${KERNEL_BUILD_DIR}" ]]; then
     log_fatal "Kernel build directory ${KERNEL_BUILD_DIR} does not exist!"
 fi
 
-KSU_SRC_DIR="${WORKSPACE_DIR}/${SRC_SUBDIR}"
+KSU_SRC_DIR="${WORKSPACE_DIR}/KernelSU"
 
-log_step "Cloning/Updating ${VARIANT_NAME} repository (${ACTIVE_BRANCH} branch)..."
+log_step "Cloning/Updating official KernelSU repository (${KSU_GIT_BRANCH})..."
 if [[ -d "${KSU_SRC_DIR}/.git" ]]; then
     cd "${KSU_SRC_DIR}" || exit 1
-    log_info "Fetching latest commits from ${ACTIVE_REPO}..."
+    log_info "Fetching latest commits from ${KSU_GIT_REPO}..."
+    git remote set-url origin "${KSU_GIT_REPO}"
     git fetch origin
-    git checkout -f "${ACTIVE_BRANCH}"
-    git pull origin "${ACTIVE_BRANCH}"
+    git checkout -f "${KSU_GIT_BRANCH}"
+    git pull origin "${KSU_GIT_BRANCH}" 2>/dev/null || true
+    git clean -fd
 else
-    log_info "Cloning ${ACTIVE_REPO} (${ACTIVE_BRANCH})..."
-    git clone --depth 1 -b "${ACTIVE_BRANCH}" "${ACTIVE_REPO}" "${KSU_SRC_DIR}"
+    log_info "Cloning ${KSU_GIT_REPO} (${KSU_GIT_BRANCH})..."
+    git clone --depth 1 -b "${KSU_GIT_BRANCH}" "${KSU_GIT_REPO}" "${KSU_SRC_DIR}"
 fi
 
 cd "${KSU_SRC_DIR}" || exit 1
 CURRENT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
-log_info "Active ${VARIANT_NAME} commit: ${CURRENT_COMMIT}"
-
-# Reset any broken/previous patches in working tree
-log_info "Ensuring clean source tree..."
-git checkout -f -- . 2>/dev/null || true
-git clean -fd 2>/dev/null || true
+log_info "Active KernelSU commit: ${CURRENT_COMMIT}"
 
 KSU_KERNEL_DIR="${KSU_SRC_DIR}/kernel"
 if [[ ! -d "${KSU_KERNEL_DIR}" ]]; then
     log_fatal "Expected kernel module directory ${KSU_KERNEL_DIR} not found in repository!"
 fi
 
-# Apply Container / Redroid Compatibility Patch
-log_step "Applying Container / Redroid Compatibility Patch..."
-THRONE_TRACKER="${KSU_KERNEL_DIR}/manager/throne_tracker.c"
-MANAGER_IDENTITY="${KSU_KERNEL_DIR}/manager/manager_identity.h"
-
-if [[ -f "${THRONE_TRACKER}" && -f "${MANAGER_IDENTITY}" ]]; then
-    python3 - "${THRONE_TRACKER}" "${MANAGER_IDENTITY}" << 'EOF'
-import sys, re
-
-tt_path = sys.argv[1]
-mi_path = sys.argv[2]
-
-# 1. Patch throne_tracker.c
-with open(tt_path, "r") as f:
-    tt_content = f.read()
-
-if "ksu_container_manager_uid" not in tt_content:
-    tt_patch = """uid_t ksu_manager_appid = KSU_INVALID_APPID;
-int ksu_container_manager_uid = -1;
-module_param_named(manager_uid, ksu_container_manager_uid, int, 0644);
-MODULE_PARM_DESC(manager_uid, "Override or container fallback manager UID");"""
-    tt_content = tt_content.replace("uid_t ksu_manager_appid = KSU_INVALID_APPID;", tt_patch)
-    with open(tt_path, "w") as f:
-        f.write(tt_content)
-
-# 2. Patch manager_identity.h
-with open(mi_path, "r") as f:
-    mi_content = f.read()
-
-if "ksu_container_manager_uid" not in mi_content:
-    replacement = """extern uid_t ksu_manager_appid; // DO NOT DIRECT USE
-extern int ksu_container_manager_uid;
-
-static inline bool ksu_is_manager_appid_valid()
-{
-    if (ksu_container_manager_uid >= 0)
-        return true;
-    return ksu_manager_appid != KSU_INVALID_APPID;
-}
-
-static inline bool is_manager()
-{
-    if (ksu_container_manager_uid >= 0 &&
-        (current_uid().val % KSU_PER_USER_RANGE) == (ksu_container_manager_uid % KSU_PER_USER_RANGE))
-        return true;
-    return unlikely(ksu_manager_appid == current_uid().val % KSU_PER_USER_RANGE);
-}
-
-static inline bool is_uid_manager(uid_t uid)
-{
-    if (ksu_container_manager_uid >= 0 &&
-        (uid % KSU_PER_USER_RANGE) == (ksu_container_manager_uid % KSU_PER_USER_RANGE))
-        return true;
-    return unlikely(ksu_manager_appid == uid % KSU_PER_USER_RANGE);
-}
-
-static inline uid_t ksu_get_manager_appid()
-{
-    if (ksu_container_manager_uid >= 0 && ksu_manager_appid == KSU_INVALID_APPID)
-        return ksu_container_manager_uid % KSU_PER_USER_RANGE;
-    return ksu_manager_appid;
-}"""
-    pattern = r"extern uid_t ksu_manager_appid; // DO NOT DIRECT USE.*?return ksu_manager_appid;\s*\}"
-    mi_content = re.sub(pattern, replacement, mi_content, flags=re.DOTALL)
-    with open(mi_path, "w") as f:
-        f.write(mi_content)
-EOF
-    log_success "Container compatibility verified (/sys/module/kernelsu/parameters/manager_uid enabled)."
-fi
-
 # Clean previous build artifacts
 log_step "Cleaning old module objects..."
 make -C "${KERNEL_BUILD_DIR}" M="${KSU_KERNEL_DIR}" clean 2>/dev/null || true
 
-log_step "Compiling ${VARIANT_NAME} LKM..."
-echo -e "${CYAN}Flags:${NC}"
+log_step "Compiling Official KernelSU LKM..."
+echo -e "${CYAN}Configuration:${NC}"
+echo -e "  Repository: ${KSU_GIT_REPO}"
+echo -e "  Branch:     ${KSU_GIT_BRANCH}"
 echo -e "  CONFIG_KSU=m"
 echo -e "  KBUILD_MODPOST_WARN=1"
 echo -e "  CONFIG_KSU_X86_PATCH_SYSCALL_DISPATCHER=y"
-echo -e "  Jobs: $(nproc)\n"
+echo -e "  Jobs:       $(nproc)\n"
 
 make -j"$(nproc)" -C "${KERNEL_BUILD_DIR}" \
     M="${KSU_KERNEL_DIR}" \
@@ -155,12 +73,11 @@ fi
 # Copy artifact to output directory
 cp -f "${COMPILED_KO}" "${OUTPUT_DIR}/kernelsu.ko"
 
-log_success "Successfully compiled kernelsu.ko (${VARIANT_NAME})!"
+log_success "Successfully compiled official kernelsu.ko!"
 echo -e "\n${BOLD}Module Details:${NC}"
-echo -e "  File:    ${BOLD}${OUTPUT_DIR}/kernelsu.ko${NC}"
-echo -e "  Variant: ${BOLD}${VARIANT_NAME}${NC}"
-echo -e "  Size:    $(du -h "${OUTPUT_DIR}/kernelsu.ko" | cut -f1)"
-echo -e "  SHA256:  $(sha256sum "${OUTPUT_DIR}/kernelsu.ko" | cut -d' ' -f1)"
+echo -e "  File:   ${BOLD}${OUTPUT_DIR}/kernelsu.ko${NC}"
+echo -e "  Size:   $(du -h "${OUTPUT_DIR}/kernelsu.ko" | cut -f1)"
+echo -e "  SHA256: $(sha256sum "${OUTPUT_DIR}/kernelsu.ko" | cut -d' ' -f1)"
 
 if command -v modinfo &>/dev/null; then
     echo ""
