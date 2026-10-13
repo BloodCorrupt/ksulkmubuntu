@@ -1,0 +1,15 @@
+[Unit]
+Description=KernelSU-Next LKM Boot Loader
+DefaultDependencies=no
+After=systemd-modules-load.service
+Before=sysinit.target basic.target waydroid-container.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/kernelsu/lkmloader-x86_64 /opt/kernelsu/kernelsu.ko
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=basic.target

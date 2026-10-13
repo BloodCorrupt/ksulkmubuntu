@@ -1,0 +1,12 @@
+# Build workspace and downloads
+build_workspace/
+output/
+
+# Temporary files
+*.tmp
+*.o
+*.ko
+*.mod*
+Module.symvers
+modules.order
+.tmp_versions/
