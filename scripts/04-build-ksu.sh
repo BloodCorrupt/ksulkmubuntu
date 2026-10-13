@@ -39,9 +39,52 @@ cd "${KSU_SRC_DIR}" || exit 1
 CURRENT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 log_info "Active KernelSU commit: ${CURRENT_COMMIT}"
 
+# Ensure clean upstream state before compiling
+git checkout -f -- . 2>/dev/null || true
+git clean -fd 2>/dev/null || true
+
 KSU_KERNEL_DIR="${KSU_SRC_DIR}/kernel"
 if [[ ! -d "${KSU_KERNEL_DIR}" ]]; then
     log_fatal "Expected kernel module directory ${KSU_KERNEL_DIR} not found in repository!"
+fi
+
+# Apply Container Auto-Crowning Patch (enables manager without host /data mount)
+log_step "Enabling Container Auto-Crowning for Manager..."
+MANAGER_IDENTITY="${KSU_KERNEL_DIR}/manager/manager_identity.h"
+
+if [[ -f "${MANAGER_IDENTITY}" ]]; then
+    python3 - "${MANAGER_IDENTITY}" << 'EOF'
+import sys
+
+mi_path = sys.argv[1]
+with open(mi_path, "r") as f:
+    content = f.read()
+
+if "auto-crowning" not in content:
+    old_block = """static inline bool is_manager()
+{
+    return unlikely(ksu_manager_appid == current_uid().val % KSU_PER_USER_RANGE);
+}"""
+
+    new_block = """static inline bool is_manager()
+{
+    if (unlikely(ksu_manager_appid == KSU_INVALID_APPID)) {
+        uid_t appid = current_uid().val % KSU_PER_USER_RANGE;
+        if (appid >= 10000 && appid < 20000) {
+            pr_info("KernelSU: container auto-crowning manager appid %d\\n", appid);
+            ksu_manager_appid = appid;
+            return true;
+        }
+    }
+    return unlikely(ksu_manager_appid == current_uid().val % KSU_PER_USER_RANGE);
+}"""
+
+    if old_block in content:
+        content = content.replace(old_block, new_block, 1)
+        with open(mi_path, "w") as f:
+            f.write(content)
+EOF
+    log_success "Container auto-crowning enabled (manager will be recognized automatically in Redroid)."
 fi
 
 # Clean previous build artifacts
