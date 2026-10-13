@@ -37,10 +37,15 @@ if is_module_loaded "kernelsu"; then
     fi
 fi
 
-log_step "Executing lkmloader to resolve unexported symbols and load module..."
-log_info "Command: ${SUDO_CMD} ${LOADER_PATH} ${MODULE_PATH}"
+LOAD_ARGS=()
+if [[ -n "${CONTAINER_MANAGER_UID:-}" ]]; then
+    LOAD_ARGS+=("manager_uid=${CONTAINER_MANAGER_UID}")
+fi
 
-LOAD_OUTPUT=$(${SUDO_CMD} "${LOADER_PATH}" "${MODULE_PATH}" 2>&1)
+log_step "Executing lkmloader to resolve unexported symbols and load module..."
+log_info "Command: ${SUDO_CMD} ${LOADER_PATH} ${MODULE_PATH} ${LOAD_ARGS[*]}"
+
+LOAD_OUTPUT=$(${SUDO_CMD} "${LOADER_PATH}" "${MODULE_PATH}" "${LOAD_ARGS[@]}" 2>&1)
 LOAD_STATUS=$?
 
 echo "${LOAD_OUTPUT}"
@@ -58,11 +63,17 @@ if [[ ${LOAD_STATUS} -eq 0 ]] || is_module_loaded "kernelsu"; then
         echo "Module entry active in /sys/module/kernelsu"
     fi
 
+    # Set manager UID if parameter exposed
+    if [[ -f "/sys/module/kernelsu/parameters/manager_uid" && -n "${CONTAINER_MANAGER_UID:-}" ]]; then
+        echo "${CONTAINER_MANAGER_UID}" | ${SUDO_CMD} tee /sys/module/kernelsu/parameters/manager_uid >/dev/null || true
+        log_info "Manager UID parameter set to: $(cat /sys/module/kernelsu/parameters/manager_uid 2>/dev/null)"
+    fi
+
     echo -e "\n${BOLD}Recent Kernel Messages (dmesg):${NC}"
     ${SUDO_CMD} dmesg | grep -iE "(kernelsu|ksu)" | tail -n 12 || true
     echo ""
-    log_info "Tip: In Waydroid or your container environment, install the KernelSU-Next Manager APK"
-    log_info "to manage root permissions, su binaries, and overlayfs modules."
+    log_info "Tip: In Redroid or Waydroid, ensure the Manager APK is installed (UID ${CONTAINER_MANAGER_UID:-10091})."
+    log_info "If using Redroid, run scripts/09-setup-redroid.sh to bind-mount container /data to host."
 else
     echo ""
     log_error "Failed to load kernelsu.ko (Exit code: ${LOAD_STATUS})."

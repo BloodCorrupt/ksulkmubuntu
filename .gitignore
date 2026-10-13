@@ -10,3 +10,4 @@ output/
 Module.symvers
 modules.order
 .tmp_versions/
+.vscode/

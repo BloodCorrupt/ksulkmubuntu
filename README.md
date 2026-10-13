@@ -194,6 +194,54 @@ If UEFI Secure Boot is active on your host (e.g. ThinkStation P330 Tiny):
 
 ---
 
+## 🤖 Redroid (Docker) Integration & Troubleshooting
+
+When running Android inside Docker using **Redroid** (e.g. `redroid13_x86_64`):
+
+### Why Manager reports "Not installed" & dmesg shows `permission denied for cmd=0x4b01 uid=10091`
+1. **Root Namespace Disconnect:**
+   KernelSU verifies and "crowns" the manager app by reading `/data/system/packages.list` in the kernel (`throne_tracker.c`).
+   On bare metal, Android is the root OS. In Redroid, Android is containerized inside Docker, and `/data/system/packages.list` exists **inside the container**, NOT on the Ubuntu host root `/`!
+2. **Result:**
+   `throne_tracker` on the host kernel fails to open `/data/system/packages.list` (ENOENT -2). Consequently, `ksu_manager_appid` stays `-1`.
+   When the Manager app (UID `10091`) tries to call ioctl `0x4b01` or `0xc0004b0d`, KernelSU rejects it with `EPERM` (`permission denied`), and the app displays **"Not installed"**!
+
+### Fix A: Automatic Host Bind-Mount (Recommended)
+Run the automated helper to detect your running Redroid container and bind-mount its data directory to `/data` on the host:
+```bash
+./ksu-suite.sh --redroid
+# or directly:
+sudo ./scripts/09-setup-redroid.sh
+```
+This maps `<redroid_data>/system/packages.list` to `/data/system/packages.list` on the host, allowing the kernel to crown UID 10091. Reopening the Manager app will now show **Working**!
+
+### Fix B: Dynamic Manager UID Parameter
+The suite patches `throne_tracker.c` and `manager_identity.h` during build to add a container parameter:
+```bash
+# Dynamically authorize the manager UID without reloading:
+echo 10091 | sudo tee /sys/module/kernelsu/parameters/manager_uid
+```
+
+---
+
+## 🔀 Switching Backends: KernelSU-Next vs SukiSU-Ultra
+
+The suite supports both **KernelSU-Next** and **SukiSU-Ultra** (the active successor to ReSukiSU):
+
+* **In Interactive Menu:** Press `[T]` to toggle between `KernelSU-Next` and `SukiSU-Ultra`.
+* **In `config.env`:** Set `KSU_VARIANT`:
+  ```bash
+  # Options: "ksu-next" or "sukisu"
+  KSU_VARIANT="sukisu"
+  ```
+* Rebuild and load:
+  ```bash
+  ./ksu-suite.sh --build
+  ./ksu-suite.sh --load
+  ```
+
+---
+
 ## 📱 Waydroid Integration
 
 Once `kernelsu.ko` is loaded on the Ubuntu host:
@@ -206,3 +254,4 @@ Once `kernelsu.ko` is loaded on the Ubuntu host:
    waydroid app install KernelSU_Next_Manager.apk
    ```
 3. Open the Manager app to verify that KernelSU status shows **Working**!
+
