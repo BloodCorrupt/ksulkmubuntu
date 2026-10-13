@@ -6,20 +6,20 @@
 
 set -eo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SUITE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
-source "${SCRIPT_DIR}/scripts/00-common.sh"
+source "${SUITE_DIR}/scripts/00-common.sh"
 
 run_all_pipeline() {
     log_header "Starting Full Automated KernelSU Build & Load Pipeline"
     START_TIME=$(date +%s)
 
-    bash "${SCRIPT_DIR}/scripts/01-check-env.sh"
-    bash "${SCRIPT_DIR}/scripts/02-install-deps.sh"
-    bash "${SCRIPT_DIR}/scripts/03-prepare-selinux.sh"
-    bash "${SCRIPT_DIR}/scripts/04-build-ksu.sh"
-    bash "${SCRIPT_DIR}/scripts/05-fetch-lkmloader.sh"
-    bash "${SCRIPT_DIR}/scripts/06-load-module.sh"
+    bash "${SCRIPTS_DIR}/01-check-env.sh"
+    bash "${SCRIPTS_DIR}/02-install-deps.sh"
+    bash "${SCRIPTS_DIR}/03-prepare-selinux.sh"
+    bash "${SCRIPTS_DIR}/04-build-ksu.sh"
+    bash "${SCRIPTS_DIR}/05-fetch-lkmloader.sh"
+    bash "${SCRIPTS_DIR}/06-load-module.sh"
 
     END_TIME=$(date +%s)
     DIFF=$((END_TIME - START_TIME))
@@ -33,7 +33,7 @@ run_all_pipeline() {
 
     read -rp "Would you like to install the persistent systemd service now? [y/N]: " INSTALL_SRV
     if [[ "${INSTALL_SRV}" =~ ^[Yy]$ ]]; then
-        bash "${SCRIPT_DIR}/scripts/07-systemd-service.sh"
+        bash "${SCRIPTS_DIR}/07-systemd-service.sh"
     fi
 }
 
@@ -44,7 +44,7 @@ show_menu() {
         echo -e "${BOLD}${CYAN}║         KernelSU-Next x86_64 Builder Suite - Ubuntu 26.04 LTS           ║${NC}"
         echo -e "${BOLD}${CYAN}╚═════════════════════════════════════════════════════════════════════════╝${NC}"
         echo -e "  Active Kernel: ${BOLD}$(uname -r)${NC} | Arch: ${BOLD}$(uname -m)${NC}"
-        echo -e "  Directory:     ${SCRIPT_DIR}\n"
+        echo -e "  Directory:     ${ROOT_DIR}\n"
 
         echo -e "  ${BOLD}${GREEN}[1]${NC} ${BOLD}Full Automated Pipeline${NC} (Check -> Deps -> SELinux -> Build -> Load)"
         echo -e "  ${BOLD}${CYAN}[2]${NC} Check Environment & Secure Boot Status"
@@ -62,14 +62,14 @@ show_menu() {
 
         case "${OPTION}" in
             1) run_all_pipeline ;;
-            2) bash "${SCRIPT_DIR}/scripts/01-check-env.sh" ;;
-            3) bash "${SCRIPT_DIR}/scripts/02-install-deps.sh" ;;
-            4) bash "${SCRIPT_DIR}/scripts/03-prepare-selinux.sh" ;;
-            5) bash "${SCRIPT_DIR}/scripts/04-build-ksu.sh" ;;
-            6) bash "${SCRIPT_DIR}/scripts/05-fetch-lkmloader.sh" ;;
-            7) bash "${SCRIPT_DIR}/scripts/06-load-module.sh" ;;
-            8) bash "${SCRIPT_DIR}/scripts/07-systemd-service.sh" ;;
-            9) bash "${SCRIPT_DIR}/scripts/08-clean.sh" ;;
+            2) bash "${SCRIPTS_DIR}/01-check-env.sh" ;;
+            3) bash "${SCRIPTS_DIR}/02-install-deps.sh" ;;
+            4) bash "${SCRIPTS_DIR}/03-prepare-selinux.sh" ;;
+            5) bash "${SCRIPTS_DIR}/04-build-ksu.sh" ;;
+            6) bash "${SCRIPTS_DIR}/05-fetch-lkmloader.sh" ;;
+            7) bash "${SCRIPTS_DIR}/06-load-module.sh" ;;
+            8) bash "${SCRIPTS_DIR}/07-systemd-service.sh" ;;
+            9) bash "${SCRIPTS_DIR}/08-clean.sh" ;;
             0) echo -e "${CYAN}Exiting. Have a nice day!${NC}"; exit 0 ;;
             *) log_warn "Invalid option selected: ${OPTION}" ;;
         esac
@@ -103,14 +103,14 @@ if [[ $# -eq 0 ]]; then
 else
     case "$1" in
         -a|--all)         run_all_pipeline ;;
-        -c|--check)       bash "${SCRIPT_DIR}/scripts/01-check-env.sh" ;;
-        -d|--deps)        bash "${SCRIPT_DIR}/scripts/02-install-deps.sh" ;;
-        -s|--selinux)     bash "${SCRIPT_DIR}/scripts/03-prepare-selinux.sh" ;;
-        -b|--build)       bash "${SCRIPT_DIR}/scripts/04-build-ksu.sh" ;;
-        -l|--loader)      bash "${SCRIPT_DIR}/scripts/05-fetch-lkmloader.sh" ;;
-        -m|--load)        bash "${SCRIPT_DIR}/scripts/06-load-module.sh" ;;
-        --service)        bash "${SCRIPT_DIR}/scripts/07-systemd-service.sh" ;;
-        --clean)          bash "${SCRIPT_DIR}/scripts/08-clean.sh" ;;
+        -c|--check)       bash "${SCRIPTS_DIR}/01-check-env.sh" ;;
+        -d|--deps)        bash "${SCRIPTS_DIR}/02-install-deps.sh" ;;
+        -s|--selinux)     bash "${SCRIPTS_DIR}/03-prepare-selinux.sh" ;;
+        -b|--build)       bash "${SCRIPTS_DIR}/04-build-ksu.sh" ;;
+        -l|--loader)      bash "${SCRIPTS_DIR}/05-fetch-lkmloader.sh" ;;
+        -m|--load)        bash "${SCRIPTS_DIR}/06-load-module.sh" ;;
+        --service)        bash "${SCRIPTS_DIR}/07-systemd-service.sh" ;;
+        --clean)          bash "${SCRIPTS_DIR}/08-clean.sh" ;;
         -h|--help)        print_help ;;
         *)
             log_error "Unknown option: $1"

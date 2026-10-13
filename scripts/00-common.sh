@@ -16,8 +16,9 @@ CYAN='\033[0;36m'
 NC='\033[0m' # No Color
 
 # Base directory determination
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${COMMON_DIR}/.." && pwd)"
+SCRIPTS_DIR="${ROOT_DIR}/scripts"
 
 # Load configuration if present
 if [[ -f "${ROOT_DIR}/config.env" ]]; then
