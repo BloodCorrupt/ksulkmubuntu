@@ -37,7 +37,7 @@ if [[ -d "${KSU_SRC_DIR}/.git" ]]; then
     cd "${KSU_SRC_DIR}" || exit 1
     log_info "Fetching latest commits from ${ACTIVE_REPO}..."
     git fetch origin
-    git checkout "${ACTIVE_BRANCH}"
+    git checkout -f "${ACTIVE_BRANCH}"
     git pull origin "${ACTIVE_BRANCH}"
 else
     log_info "Cloning ${ACTIVE_REPO} (${ACTIVE_BRANCH})..."
@@ -48,40 +48,83 @@ cd "${KSU_SRC_DIR}" || exit 1
 CURRENT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 log_info "Active ${VARIANT_NAME} commit: ${CURRENT_COMMIT}"
 
+# Reset any broken/previous patches in working tree
+log_info "Ensuring clean source tree..."
+git checkout -f -- . 2>/dev/null || true
+git clean -fd 2>/dev/null || true
+
 KSU_KERNEL_DIR="${KSU_SRC_DIR}/kernel"
 if [[ ! -d "${KSU_KERNEL_DIR}" ]]; then
     log_fatal "Expected kernel module directory ${KSU_KERNEL_DIR} not found in repository!"
 fi
 
 # Apply Container / Redroid Compatibility Patch
-log_step "Checking Container / Redroid Compatibility..."
+log_step "Applying Container / Redroid Compatibility Patch..."
 THRONE_TRACKER="${KSU_KERNEL_DIR}/manager/throne_tracker.c"
 MANAGER_IDENTITY="${KSU_KERNEL_DIR}/manager/manager_identity.h"
 
 if [[ -f "${THRONE_TRACKER}" && -f "${MANAGER_IDENTITY}" ]]; then
-    if ! grep -q "ksu_container_manager_uid" "${THRONE_TRACKER}"; then
-        log_info "Applying container manager parameter patch to throne_tracker.c..."
-        sed -i '/uid_t ksu_manager_appid = KSU_INVALID_APPID;/a \
-int ksu_container_manager_uid = -1;\
-module_param_named(manager_uid, ksu_container_manager_uid, int, 0644);\
-MODULE_PARM_DESC(manager_uid, "Override or container fallback manager UID");' "${THRONE_TRACKER}"
-    fi
+    python3 - "${THRONE_TRACKER}" "${MANAGER_IDENTITY}" << 'EOF'
+import sys, re
 
-    if ! grep -q "ksu_container_manager_uid" "${MANAGER_IDENTITY}"; then
-        log_info "Applying container manager resolution patch to manager_identity.h..."
-        # Add extern declaration before functions
-        sed -i '/extern uid_t ksu_manager_appid;/a \
-extern int ksu_container_manager_uid;' "${MANAGER_IDENTITY}"
+tt_path = sys.argv[1]
+mi_path = sys.argv[2]
 
-        # Patch is_manager() to check ksu_container_manager_uid
-        sed -i 's/return unlikely(ksu_manager_appid == current_uid().val % KSU_PER_USER_RANGE);/if (ksu_container_manager_uid >= 0 && (current_uid().val % KSU_PER_USER_RANGE) == (ksu_container_manager_uid % KSU_PER_USER_RANGE)) return true; return unlikely(ksu_manager_appid == current_uid().val % KSU_PER_USER_RANGE);/' "${MANAGER_IDENTITY}"
+# 1. Patch throne_tracker.c
+with open(tt_path, "r") as f:
+    tt_content = f.read()
 
-        # Patch is_uid_manager()
-        sed -i 's/return unlikely(ksu_manager_appid == uid % KSU_PER_USER_RANGE);/if (ksu_container_manager_uid >= 0 && (uid % KSU_PER_USER_RANGE) == (ksu_container_manager_uid % KSU_PER_USER_RANGE)) return true; return unlikely(ksu_manager_appid == uid % KSU_PER_USER_RANGE);/' "${MANAGER_IDENTITY}"
+if "ksu_container_manager_uid" not in tt_content:
+    tt_patch = """uid_t ksu_manager_appid = KSU_INVALID_APPID;
+int ksu_container_manager_uid = -1;
+module_param_named(manager_uid, ksu_container_manager_uid, int, 0644);
+MODULE_PARM_DESC(manager_uid, "Override or container fallback manager UID");"""
+    tt_content = tt_content.replace("uid_t ksu_manager_appid = KSU_INVALID_APPID;", tt_patch)
+    with open(tt_path, "w") as f:
+        f.write(tt_content)
 
-        # Patch ksu_is_manager_appid_valid()
-        sed -i 's/return ksu_manager_appid != KSU_INVALID_APPID;/if (ksu_container_manager_uid >= 0) return true; return ksu_manager_appid != KSU_INVALID_APPID;/' "${MANAGER_IDENTITY}"
-    fi
+# 2. Patch manager_identity.h
+with open(mi_path, "r") as f:
+    mi_content = f.read()
+
+if "ksu_container_manager_uid" not in mi_content:
+    replacement = """extern uid_t ksu_manager_appid; // DO NOT DIRECT USE
+extern int ksu_container_manager_uid;
+
+static inline bool ksu_is_manager_appid_valid()
+{
+    if (ksu_container_manager_uid >= 0)
+        return true;
+    return ksu_manager_appid != KSU_INVALID_APPID;
+}
+
+static inline bool is_manager()
+{
+    if (ksu_container_manager_uid >= 0 &&
+        (current_uid().val % KSU_PER_USER_RANGE) == (ksu_container_manager_uid % KSU_PER_USER_RANGE))
+        return true;
+    return unlikely(ksu_manager_appid == current_uid().val % KSU_PER_USER_RANGE);
+}
+
+static inline bool is_uid_manager(uid_t uid)
+{
+    if (ksu_container_manager_uid >= 0 &&
+        (uid % KSU_PER_USER_RANGE) == (ksu_container_manager_uid % KSU_PER_USER_RANGE))
+        return true;
+    return unlikely(ksu_manager_appid == uid % KSU_PER_USER_RANGE);
+}
+
+static inline uid_t ksu_get_manager_appid()
+{
+    if (ksu_container_manager_uid >= 0 && ksu_manager_appid == KSU_INVALID_APPID)
+        return ksu_container_manager_uid % KSU_PER_USER_RANGE;
+    return ksu_manager_appid;
+}"""
+    pattern = r"extern uid_t ksu_manager_appid; // DO NOT DIRECT USE.*?return ksu_manager_appid;\s*\}"
+    mi_content = re.sub(pattern, replacement, mi_content, flags=re.DOTALL)
+    with open(mi_path, "w") as f:
+        f.write(mi_content)
+EOF
     log_success "Container compatibility verified (/sys/module/kernelsu/parameters/manager_uid enabled)."
 fi
 
